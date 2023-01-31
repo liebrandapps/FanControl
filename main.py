@@ -1,4 +1,6 @@
+import datetime
 import hashlib
+import sys
 
 import requests
 from xml.etree import ElementTree as ET
@@ -17,12 +19,12 @@ ON_TEMP - Temperature when Fan should turned on (must be below OFF_TEMP!!)
 
 BOX = "192.168.2.1"
 USER = "fancontrol"
-PW = "xxxxxxxxx"
-AIN = "09995 0880000"
-SWITCH = "192.168.2.10"
+PW = "xxxxxxxxxx"
+AIN: str = "09995 xxxxxxxx"
+SWITCH = "192.168.2.40"
 
-OFF_TEMP = 20.0
-ON_TEMP = 18.0
+OFF_TEMP: float = 20.5
+ON_TEMP: float = 18.0
 
 """
 End of config section
@@ -39,6 +41,7 @@ URLSWITCH = "http://{switch}/cm?cmnd=Power%20{onoff}"
 
 
 def getSessionId():
+    global sessionId
     sessionId = None
     challenge = None
     result = requests.get(URL.format(box=BOX))
@@ -62,16 +65,44 @@ def getTemperature(sessionId, ain):
     switchCmd = "gettemperature"
     result = requests.get(QUERY.format(box=BOX, ain=ain, switchcmd=switchCmd, sid=sessionId))
     strTmp = result.content.decode("UTF-8")
-    return int(strTmp) / 10
+    if strTmp is None or len(strTmp)==0:
+        return(-1000)
+    else:
+        return float(strTmp) / 10
+
 
 def switchFan(onoff):
     result = requests.get(URLSWITCH.format(switch=SWITCH, onoff=onoff))
 
 
 if __name__ == '__main__':
-    sessionId = getSessionId()
-    temp = getTemperature(AIN)
-    if temp <ON_TEMP:
-        switchFan("on")
-    elif temp > OFF_TEMP:
-        switchFan("off")
+    retCode = 0
+    now = datetime.datetime.now().strftime("%d.%m.%Y, %H:%M:%S")
+    print(f"[INF] Starting FanContol at {now}")
+    if ON_TEMP >= OFF_TEMP:
+        print(f"[ERR] Parameter ON_TEMP ({ON_TEMP}) must be lower than OFF_TEMP ({OFF_TEMP})")
+        retCode = -1
+    else:
+        sessionId = getSessionId()
+        if sessionId == "0000000000000000":
+            print("[ERR] Error getting a valid sessionId, check your configuration")
+            retCode = -1
+        else:
+            print(f"[INF] Got a valid session id from {BOX}")
+            temp = getTemperature(sessionId, AIN)
+            if temp == -1000:
+                print(f"[ERR] Error reading a valid temperature, is your ain {AIN} valid?")
+            else:
+                print(f"[INF] ain {AIN} reports {temp} degrees celsius")
+                if temp < ON_TEMP:
+                    print("[INF] Switching fan ON")
+                    switchFan("on")
+                elif temp > OFF_TEMP:
+                    print("[INF] Switching fan OFF")
+                    switchFan("off")
+                else:
+                    print(f"[INF] Temperature is between on {ON_TEMP} and off {OFF_TEMP}. Doing nothing.")
+    now = datetime.datetime.now().strftime("%d.%m.%Y, %H:%M:%S")
+    print(f"[INF] Finishing FanContol at {now}")
+    sys.exit(retCode)
+
